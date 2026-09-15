@@ -8,6 +8,9 @@ import { CmykViewer } from './CmykViewer';
 import { PdfUploadModal } from './PdfUploadModal';
 import { getDocumentType } from '../../utils/fileTypes';
 import type { ActiveTool, Annotation, FileItem } from '../../types/packaging';
+import { SidebarTools } from './SidebarTools';
+import { AnnotationsDrawer } from './AnnotationsDrawer';
+import { ShortcutsModal } from './ShortcutsModal';
 
 export type { FileItem };
 
@@ -57,8 +60,9 @@ export const PackagingViewer: React.FC<PackagingViewerProps> = ({
     initialPanY: 0,
   });
 
-  // Controle do Modal de Upload
+  // Controle do Modal de Upload e Atalhos
   const [isUploadModalOpen, setIsUploadModalOpen] = useState<boolean>(!primaryPdf);
+  const [isShortcutsOpen, setIsShortcutsOpen] = useState<boolean>(false);
 
   // Dimensões visuais reportadas pelo PdfCanvas (CSS pixels)
   const [canvasDimensions, setCanvasDimensions] = useState<{ width: number; height: number }>({
@@ -91,16 +95,23 @@ export const PackagingViewer: React.FC<PackagingViewerProps> = ({
     setCanvasDimensions(dims);
   }, []);
 
-  // Atalho de teclado para a Mãozinha (segurar tecla Espaço)
+  // Atalhos de teclado globais
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ignora se estiver digitando em textarea/input
       if ((e.target as HTMLElement).tagName === 'TEXTAREA' || (e.target as HTMLElement).tagName === 'INPUT') {
         return;
       }
-      if (e.code === 'Space' && !e.repeat) {
-        setIsSpacePressed(true);
-      }
+      
+      if (e.code === 'Space' && !e.repeat) setIsSpacePressed(true);
+
+      // Atalhos das ferramentas
+      if (e.key === '?' && e.shiftKey) setIsShortcutsOpen(true);
+      if (e.key.toLowerCase() === 'v') setActiveTool('select');
+      if (e.key.toLowerCase() === 'm') setActiveTool('measure');
+      if (e.key.toLowerCase() === 'c') setActiveTool('annotate');
+      if (e.key.toLowerCase() === 'd' && comparisonPdf) setActiveTool('diff');
+      if (e.key.toLowerCase() === 'k') setActiveTool('cmyk');
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
@@ -115,7 +126,7 @@ export const PackagingViewer: React.FC<PackagingViewerProps> = ({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, []);
+  }, [comparisonPdf]);
 
   const handleZoomIn = () => setScale((prev) => Math.min(Number((prev + 0.25).toFixed(2)), 4.0));
   const handleZoomOut = () => setScale((prev) => Math.max(Number((prev - 0.25).toFixed(2)), 0.5));
@@ -261,76 +272,8 @@ export const PackagingViewer: React.FC<PackagingViewerProps> = ({
           </button>
         </div>
 
-        {/* Seletor de Ferramentas Centrais (Estilo Pílula FoxBox) */}
-        <div className="flex items-center gap-1 bg-slate-100/70 p-1 rounded-2xl border border-slate-200/50 shadow-inner">
-          <button
-            type="button"
-            onClick={() => setActiveTool('select')}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all flex items-center gap-1.5 ${
-              activeTool === 'select'
-                ? 'bg-white text-indigo-600 font-bold shadow-xs'
-                : 'text-slate-500 hover:text-slate-800'
-            }`}
-            title="Navegar com a mãozinha (arraste a prancheta). Atalho: segure a barra de Espaço."
-          >
-            <span>✋</span> Mãozinha (Pan)
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTool('measure')}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all flex items-center gap-1.5 ${
-              activeTool === 'measure'
-                ? 'bg-white text-indigo-600 font-bold shadow-xs'
-                : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <span>📏</span> Medição (mm)
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTool('annotate')}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all flex items-center gap-1.5 ${
-              activeTool === 'annotate'
-                ? 'bg-white text-indigo-600 font-bold shadow-xs'
-                : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <span>💬</span> Anotações
-            {annotations.length > 0 && (
-              <span className="ml-1 px-1.5 py-0.2 bg-indigo-600 text-white rounded-full text-[10px] font-bold">
-                {annotations.length}
-              </span>
-            )}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTool('diff')}
-            disabled={!comparisonPdf}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all flex items-center gap-1.5 disabled:opacity-40 ${
-              activeTool === 'diff'
-                ? 'bg-indigo-600 text-white font-bold shadow-xs shadow-indigo-600/30'
-                : 'text-slate-500 hover:text-slate-800'
-            }`}
-            title={!comparisonPdf ? 'Carregue a Versão B no modal para comparar' : 'Comparar versões (Diff)'}
-          >
-            <span>⚡</span> Comparar Versões
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTool('cmyk')}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all flex items-center gap-1.5 ${
-              activeTool === 'cmyk'
-                ? 'bg-white text-indigo-600 font-bold shadow-xs'
-                : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <span>🎨</span> Chapas CMYK
-          </button>
-        </div>
+        {/* Espaçador Flex para empurrar os controles da direita */}
+        <div className="flex-1" />
 
         {/* Controles da Direita: Alternância A/B, Paginação e Zoom */}
         <div className="flex items-center gap-3">
@@ -422,12 +365,20 @@ export const PackagingViewer: React.FC<PackagingViewerProps> = ({
         </div>
       </header>
 
-      {/* Área Central de Visualização (Mesa de Luz com Suporte a Pan/Mãozinha) */}
-      <main
-        onPointerDown={handlePointerDownPan}
-        onPointerMove={handlePointerMovePan}
-        onPointerUp={handlePointerUpPan}
-        onWheel={handleWheel}
+      {/* Área Central (Sidebar + Main Canvas + Drawer) */}
+      <div className="flex-1 flex overflow-hidden relative">
+        <SidebarTools
+          activeTool={activeTool}
+          setActiveTool={setActiveTool}
+          hasComparison={!!comparisonPdf}
+          annotationsCount={annotations.length}
+        />
+
+        <main
+          onPointerDown={handlePointerDownPan}
+          onPointerMove={handlePointerMovePan}
+          onPointerUp={handlePointerUpPan}
+          onWheel={handleWheel}
         className={`flex-1 overflow-hidden bg-[#f8fafc] p-8 flex justify-center items-center relative ${
           canPan
             ? isPanning
@@ -479,28 +430,34 @@ export const PackagingViewer: React.FC<PackagingViewerProps> = ({
             className="transition-transform duration-75 ease-out select-none"
           >
             {/* Exibição em Modo Diff (Universal: PDF vs PDF, Img vs Img ou PDF vs Img) */}
-            {activeTool === 'diff' && primaryPdf && comparisonPdf && (
-              <PdfDiffViewer
-                pdfDocA={isImageA ? null : primaryDoc}
-                imageUrlA={primaryPdf.url}
-                isImageA={isImageA}
-                pdfDocB={isImageB ? null : comparisonDoc}
-                imageUrlB={comparisonPdf.url}
-                isImageB={isImageB}
-                pageNumber={pageNumber}
-                scale={scale}
-              />
+            {primaryPdf && comparisonPdf && (
+              <div className={activeTool === 'diff' ? 'block' : 'hidden'}>
+                <PdfDiffViewer
+                  isActive={activeTool === 'diff'}
+                  pdfDocA={isImageA ? null : primaryDoc}
+                  imageUrlA={primaryPdf.url}
+                  isImageA={isImageA}
+                  pdfDocB={isImageB ? null : comparisonDoc}
+                  imageUrlB={comparisonPdf.url}
+                  isImageB={isImageB}
+                  pageNumber={pageNumber}
+                  scale={scale}
+                />
+              </div>
             )}
 
             {/* Exibição em Modo Chapas CMYK (PDF ou Imagem JPG/PNG) */}
-            {activeTool === 'cmyk' && (
-              <CmykViewer
-                pdfDoc={activeIsImage ? null : activeDoc}
-                imageUrl={activeFile?.url}
-                isImage={activeIsImage}
-                pageNumber={pageNumber}
-                scale={scale}
-              />
+            {(activeDoc || (activeIsImage && activeFile?.url)) && (
+              <div className={activeTool === 'cmyk' ? 'block' : 'hidden'}>
+                <CmykViewer
+                  isActive={activeTool === 'cmyk'}
+                  pdfDoc={activeIsImage ? null : activeDoc}
+                  imageUrl={activeFile?.url}
+                  isImage={activeIsImage}
+                  pageNumber={pageNumber}
+                  scale={scale}
+                />
+              </div>
             )}
 
             {/* Visualização Normal (Canvas + Medição + Anotações) */}
@@ -540,9 +497,25 @@ export const PackagingViewer: React.FC<PackagingViewerProps> = ({
 
         {/* Dica discreta de navegação no rodapé */}
         <div className="absolute bottom-4 left-6 bg-white/90 backdrop-blur-xs px-3 py-1.5 rounded-xl border border-slate-200/80 text-[11px] text-slate-500 shadow-2xs pointer-events-none flex items-center gap-2">
-          <span>💡 <strong>Dica:</strong> Segure a tecla <kbd className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono font-bold text-[10px] border border-slate-200">Espaço</kbd> ou clique com a <strong>✋ Mãozinha</strong> para arrastar a embalagem. <kbd className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono font-bold text-[10px] border border-slate-200">Ctrl + Scroll</kbd> para zoom.</span>
+          <span>💡 <strong>Dica:</strong> <kbd className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono font-bold text-[10px] border border-slate-200">Shift + ?</kbd> para atalhos. <kbd className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono font-bold text-[10px] border border-slate-200">Espaço</kbd> arrasta. <kbd className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono font-bold text-[10px] border border-slate-200">Ctrl + Scroll</kbd> zoom.</span>
         </div>
-      </main>
+        </main>
+
+        <AnnotationsDrawer
+          annotations={annotations}
+          onSelectAnnotation={(ann) => {
+            // Centraliza a câmera na anotação (fly-to)
+            setPanPosition({
+              x: -(ann.x / 100) * canvasDimensions.width * scale + canvasDimensions.width / 2,
+              y: -(ann.y / 100) * canvasDimensions.height * scale + canvasDimensions.height / 2
+            });
+            setActiveTool('annotate');
+          }}
+          onUpdateStatus={handleUpdateStatus}
+        />
+      </div>
+
+      <ShortcutsModal isOpen={isShortcutsOpen} onClose={() => setIsShortcutsOpen(false)} />
     </div>
   );
 };

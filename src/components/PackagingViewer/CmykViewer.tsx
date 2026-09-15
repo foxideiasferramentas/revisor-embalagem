@@ -4,6 +4,7 @@ import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { loadImageElement } from '../../utils/fileTypes';
 
 interface CmykViewerProps {
+  isActive?: boolean;
   pdfDoc: PDFDocumentProxy | null;
   imageUrl?: string | null;
   isImage?: boolean;
@@ -31,6 +32,7 @@ type ViewMode = 'composite' | 'film'; // 'composite' = mistura real das tintas; 
  * além de inspecionar o filme/fotolito individual em alta definição.
  */
 export const CmykViewer: React.FC<CmykViewerProps> = ({
+  isActive = true,
   pdfDoc,
   imageUrl,
   isImage = false,
@@ -54,6 +56,8 @@ export const CmykViewer: React.FC<CmykViewerProps> = ({
 
   const [viewMode, setViewMode] = useState<ViewMode>('composite');
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [isMagnifierActive, setIsMagnifierActive] = useState<boolean>(false);
+  const [magnifierPos, setMagnifierPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [dimensions, setDimensions] = useState<{ width: number; height: number }>({
     width: 800,
     height: 1100,
@@ -282,7 +286,7 @@ export const CmykViewer: React.FC<CmykViewerProps> = ({
   return (
     <div className="flex flex-col items-center w-full">
       {/* Painel de Controle de Chapas CMYK - Fixo no Topo (Imune a Pan/Zoom) */}
-      {createPortal(
+      {isActive && createPortal(
         <div className="fixed top-20 left-0 right-0 flex justify-center z-40 pointer-events-none px-6">
           <div className="pointer-events-auto bg-white/95 backdrop-blur-md border border-slate-200/90 rounded-2xl p-4 shadow-lg flex flex-wrap items-center justify-between gap-5 max-w-5xl w-full text-xs animate-in fade-in slide-in-from-top-2 duration-150">
         {/* Identificação e Modo de Visualização */}
@@ -318,6 +322,19 @@ export const CmykViewer: React.FC<CmykViewerProps> = ({
               title="Densidade monocromática (fotolito/chapa de alumínio)"
             >
               Filme P/B
+            </button>
+            <div className="w-px h-4 bg-slate-200 mx-1" />
+            <button
+              type="button"
+              onClick={() => setIsMagnifierActive(!isMagnifierActive)}
+              className={`px-2.5 py-1 rounded-lg font-bold transition-all flex items-center gap-1 ${
+                isMagnifierActive
+                  ? 'bg-indigo-600 text-white shadow-2xs'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+              title="Inspecionar Retícula (Lupa 5x)"
+            >
+              <span>🔎</span> Lupa
             </button>
           </div>
         </div>
@@ -482,11 +499,26 @@ export const CmykViewer: React.FC<CmykViewerProps> = ({
   )}
 
       {/* Exibição da Arte Separada no Canvas */}
-      <div className="relative shadow-xl rounded-2xl bg-white overflow-hidden border border-slate-200/80">
+      <div 
+        className={`relative shadow-xl rounded-2xl bg-white overflow-hidden border border-slate-200/80 ${isMagnifierActive ? 'cursor-crosshair' : ''}`}
+        onPointerMove={(e) => {
+          if (!isMagnifierActive) return;
+          const rect = e.currentTarget.getBoundingClientRect();
+          setMagnifierPos({
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top,
+          });
+        }}
+      >
         {isProcessing && (
-          <div className="absolute inset-0 bg-white/80 backdrop-blur-xs flex items-center justify-center z-30 text-slate-700 text-xs font-semibold">
-            <div className="w-5 h-5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mr-2" />
-            Separando chapas de impressão CMYK...
+          <div className="absolute inset-0 bg-white/90 backdrop-blur-sm flex flex-col items-center justify-center z-30">
+            {/* Skeleton Loading simulando prancheta */}
+            <div className="w-48 h-64 bg-slate-200/60 animate-pulse rounded-xl mb-6 shadow-inner border border-slate-300/50" />
+            
+            <div className="flex items-center gap-3 text-indigo-700 font-bold text-xs bg-indigo-50 px-4 py-2.5 rounded-xl border border-indigo-100 shadow-sm">
+              <div className="w-5 h-5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+              Processando chapas CMYK em alta definição...
+            </div>
           </div>
         )}
         <canvas
@@ -494,6 +526,28 @@ export const CmykViewer: React.FC<CmykViewerProps> = ({
           style={{ width: dimensions.width, height: dimensions.height }}
           className="block select-none"
         />
+
+        {/* Lupa Renderizada em cima do canvas */}
+        {isMagnifierActive && !isProcessing && (
+          <div
+            className="absolute rounded-full border-4 border-white shadow-[0_5px_20px_rgba(0,0,0,0.3)] pointer-events-none z-20 bg-white"
+            style={{
+              width: 200,
+              height: 200,
+              left: magnifierPos.x - 100,
+              top: magnifierPos.y - 100,
+              backgroundImage: canvasRef.current ? `url(${canvasRef.current.toDataURL()})` : 'none',
+              backgroundPosition: `-${magnifierPos.x * 5 - 100}px -${magnifierPos.y * 5 - 100}px`,
+              backgroundSize: `${dimensions.width * 5}px ${dimensions.height * 5}px`,
+              backgroundRepeat: 'no-repeat',
+            }}
+          >
+            {/* Mira central */}
+            <div className="absolute top-1/2 left-1/2 w-1.5 h-1.5 -translate-x-1/2 -translate-y-1/2 bg-rose-500 rounded-full" />
+            <div className="absolute top-1/2 left-1/2 w-8 h-px -translate-x-1/2 -translate-y-1/2 bg-rose-500/30" />
+            <div className="absolute top-1/2 left-1/2 h-8 w-px -translate-x-1/2 -translate-y-1/2 bg-rose-500/30" />
+          </div>
+        )}
       </div>
     </div>
   );

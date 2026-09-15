@@ -7,6 +7,7 @@ import { loadImageElement } from '../../utils/fileTypes';
 export type DiffVisualMode = 'diff' | 'wipe' | 'side-by-side' | 'flash';
 
 interface PdfDiffViewerProps {
+  isActive?: boolean;
   pdfDocA: PDFDocumentProxy | null;
   imageUrlA?: string | null;
   isImageA?: boolean;
@@ -26,6 +27,7 @@ interface PdfDiffViewerProps {
  * - Controle de deslocamento milimétrico (Offset X e Y) para compensar sangrias ou margens diferentes.
  */
 export const PdfDiffViewer: React.FC<PdfDiffViewerProps> = ({
+  isActive = true,
   pdfDocA,
   imageUrlA,
   isImageA = false,
@@ -58,7 +60,21 @@ export const PdfDiffViewer: React.FC<PdfDiffViewerProps> = ({
   const [scaleMultiplierB, setScaleMultiplierB] = useState<number>(1.0);
   const [offsetB, setOffsetB] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [autoMatchScale, setAutoMatchScale] = useState<boolean>(true);
-  const [showAlignControls, setShowAlignControls] = useState<boolean>(true);
+  const [showAlignControls, setShowAlignControls] = useState<boolean>(false);
+
+  // Estados para Arrastar Versão B (Offset via Drag)
+  const [isDraggingOffset, setIsDraggingOffset] = useState<boolean>(false);
+  const dragStartRef = useRef<{ startX: number; startY: number; initialOffsetX: number; initialOffsetY: number }>({
+    startX: 0, startY: 0, initialOffsetX: 0, initialOffsetY: 0
+  });
+
+  // Estado síncrono da entrada de texto para a escala da Versão B (%)
+  const [scaleInputStr, setScaleInputStr] = useState<string>(String(Math.round(scaleMultiplierB * 100)));
+
+  useEffect(() => {
+    const pct = Math.round(scaleMultiplierB * 1000) / 10;
+    setScaleInputStr(String(pct));
+  }, [scaleMultiplierB]);
 
   const [dimensions, setDimensions] = useState<{ width: number; height: number }>({
     width: 800,
@@ -258,6 +274,7 @@ export const PdfDiffViewer: React.FC<PdfDiffViewerProps> = ({
 
   // Manipuladores de arraste da cortina
   const handleWipePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.shiftKey) return; // Se Shift estiver pressionado, é para offset
     setIsDraggingWipe(true);
     e.currentTarget.setPointerCapture(e.pointerId);
     updateWipeFromPointer(e);
@@ -281,10 +298,43 @@ export const PdfDiffViewer: React.FC<PdfDiffViewerProps> = ({
     setWipePosition(Number(((x / rect.width) * 100).toFixed(2)));
   };
 
+  // Manipuladores de Arraste de Offset (Shift + Drag)
+  const handleOffsetPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.shiftKey) {
+      e.preventDefault();
+      setIsDraggingOffset(true);
+      dragStartRef.current = {
+        startX: e.clientX,
+        startY: e.clientY,
+        initialOffsetX: offsetB.x,
+        initialOffsetY: offsetB.y
+      };
+      try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
+    }
+  };
+
+  const handleOffsetPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (isDraggingOffset) {
+      const deltaX = e.clientX - dragStartRef.current.startX;
+      const deltaY = e.clientY - dragStartRef.current.startY;
+      setOffsetB({
+        x: dragStartRef.current.initialOffsetX + deltaX,
+        y: dragStartRef.current.initialOffsetY + deltaY
+      });
+    }
+  };
+
+  const handleOffsetPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (isDraggingOffset) {
+      setIsDraggingOffset(false);
+      try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (_) {}
+    }
+  };
+
   return (
     <div className="flex flex-col items-center w-full">
       {/* Barra de Ferramentas Fixa no Topo (Imune a Pan/Zoom) */}
-      {createPortal(
+      {isActive && createPortal(
         <div className="fixed top-20 left-0 right-0 flex flex-col items-center z-40 pointer-events-none px-6">
           <div className="pointer-events-auto flex flex-wrap items-center justify-between gap-4 bg-white/95 backdrop-blur-md px-5 py-2.5 rounded-2xl border border-slate-200/90 shadow-lg max-w-5xl w-full text-xs animate-in fade-in slide-in-from-top-2 duration-150">
             {/* Seletor de Modo de Comparação */}
@@ -360,19 +410,21 @@ export const PdfDiffViewer: React.FC<PdfDiffViewerProps> = ({
               </button>
 
               {/* Botão para Abrir Calibração Fina */}
-              <button
-                type="button"
-                onClick={() => setShowAlignControls(!showAlignControls)}
-                className={`px-3 py-1.5 rounded-xl font-bold border transition-all flex items-center gap-1.5 ${
-                  showAlignControls
-                    ? 'bg-slate-900 text-white border-slate-900'
-                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                }`}
-                title="Ajuste fino de escala e deslocamento (Offset)"
-              >
-                <span>⚙️</span>
-                <span>Calibrar Escala B</span>
-              </button>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowAlignControls(!showAlignControls)}
+                  className={`px-3 py-1.5 rounded-xl font-bold border transition-all flex items-center gap-1.5 ${
+                    showAlignControls
+                      ? 'bg-slate-900 text-white border-slate-900'
+                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                  }`}
+                  title="Ajuste fino de escala e deslocamento (Offset)"
+                >
+                  <span>⚙️</span>
+                  <span>Ajustes Avançados</span>
+                </button>
+              </div>
 
               {/* Controles de Modo (Wipe divisor ou Flash) */}
               {visualMode === 'wipe' && (
@@ -443,15 +495,27 @@ export const PdfDiffViewer: React.FC<PdfDiffViewerProps> = ({
 
           {/* Painel Flutuante de Calibração Fina de Escala Proporcional e Deslocamento */}
           {showAlignControls && (
-            <div className="pointer-events-auto mt-2 bg-white/98 backdrop-blur-md p-3.5 rounded-2xl border border-indigo-100 shadow-xl flex flex-wrap items-center justify-between gap-4 max-w-5xl w-full text-xs animate-in fade-in zoom-in-95 duration-150">
+            <div className="pointer-events-auto absolute top-14 right-1/4 bg-white/98 backdrop-blur-md p-4 rounded-2xl border border-indigo-100 shadow-2xl flex flex-col gap-4 max-w-sm w-full text-xs animate-in fade-in zoom-in-95 duration-150">
+              
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <h4 className="font-bold text-slate-800 text-sm">Ajustes Avançados</h4>
+                <button onClick={() => setShowAlignControls(false)} className="text-slate-400 hover:text-slate-700">×</button>
+              </div>
+
+              {/* Dica do Shift */}
+              <div className="bg-indigo-50 text-indigo-700 p-2 rounded-lg text-[10px] font-medium border border-indigo-100 flex items-start gap-2">
+                <span>💡</span>
+                <span><strong>Dica:</strong> Para ajustar o encaixe (offset) visualmente, segure a tecla <kbd className="px-1 py-0.5 bg-white rounded border border-indigo-200 shadow-sm">Shift</kbd> e <strong>arraste</strong> a prancheta.</span>
+              </div>
+
               {/* Seção 1: Escala Proporcional Estrita (Sem Stretch) */}
-              <div className="flex items-center gap-3">
+              <div className="flex flex-col gap-2">
                 <div className="flex items-center gap-1.5">
                   <span className="font-bold text-slate-800 flex items-center gap-1">
                     <span>🔍</span> Escala Versão B:
                   </span>
                   <span className="bg-indigo-50 text-indigo-700 font-semibold px-2 py-0.5 rounded-full text-[10px] border border-indigo-100">
-                    Proporcional 1:1 (Sem Stretch)
+                    Proporcional 1:1
                   </span>
                 </div>
 
@@ -471,7 +535,7 @@ export const PdfDiffViewer: React.FC<PdfDiffViewerProps> = ({
                     step="0.02"
                     value={scaleMultiplierB}
                     onChange={(e) => setScaleMultiplierB(parseFloat(e.target.value))}
-                    className="w-32 accent-indigo-600 cursor-pointer"
+                    className="w-28 accent-indigo-600 cursor-pointer"
                   />
                   <button
                     type="button"
@@ -481,9 +545,36 @@ export const PdfDiffViewer: React.FC<PdfDiffViewerProps> = ({
                   >
                     +
                   </button>
-                  <span className="font-mono font-bold text-indigo-600 w-14 text-center text-sm bg-indigo-50/60 py-0.5 rounded-md border border-indigo-100">
-                    {Math.round(scaleMultiplierB * 100)}%
-                  </span>
+
+                  {/* CAMPO EDITÁVEL DE PORCENTAGEM EXATA */}
+                  <div className="flex items-center bg-indigo-50/90 px-2 py-0.5 rounded-lg border border-indigo-200 focus-within:ring-2 focus-within:ring-indigo-500 shadow-2xs">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={scaleInputStr}
+                      onChange={(e) => {
+                        const newStr = e.target.value;
+                        setScaleInputStr(newStr);
+                        const val = parseFloat(newStr.replace(',', '.'));
+                        if (!isNaN(val) && val > 0 && val <= 500) {
+                          setScaleMultiplierB(Number((val / 100).toFixed(4)));
+                        }
+                      }}
+                      onBlur={() => {
+                        const val = parseFloat(scaleInputStr.replace(',', '.'));
+                        if (isNaN(val) || val <= 0) {
+                          setScaleInputStr(String(Math.round(scaleMultiplierB * 100)));
+                        } else {
+                          const clamped = Math.min(Math.max(val, 10), 500);
+                          setScaleMultiplierB(Number((clamped / 100).toFixed(4)));
+                          setScaleInputStr(String(clamped));
+                        }
+                      }}
+                      className="w-12 text-center font-mono font-bold text-indigo-700 bg-transparent text-xs focus:outline-none"
+                      title="Digite a porcentagem exata da escala desejada (ex: 100, 104.5, 98)"
+                    />
+                    <span className="font-mono font-bold text-indigo-500 text-xs">%</span>
+                  </div>
                 </div>
 
                 {/* Presets Rápidos de Escala */}
@@ -506,7 +597,7 @@ export const PdfDiffViewer: React.FC<PdfDiffViewerProps> = ({
               </div>
 
               {/* Seção 2: Ajuste de Posição / Encaixe da Embalagem (Offset X e Y) */}
-              <div className="flex items-center gap-3 pl-3 border-l border-slate-200">
+              <div className="flex flex-col gap-2 pt-3 border-t border-slate-100">
                 <span className="font-bold text-slate-700">Encaixe / Posição:</span>
                 
                 {/* Pad direcional rápido */}
@@ -547,10 +638,41 @@ export const PdfDiffViewer: React.FC<PdfDiffViewerProps> = ({
                   </button>
                 </div>
 
-                <div className="flex items-center gap-1.5 font-mono text-[11px] text-slate-500">
-                  <span>X: {offsetB.x}px</span>
-                  <span>•</span>
-                  <span>Y: {offsetB.y}px</span>
+                {/* CAMPOS NUMÉRICOS EDITÁVEIS PARA OS VALORES EXATOS DE OFFSET X E Y */}
+                <div className="flex items-center gap-2 bg-slate-50 px-2 py-1 rounded-xl border border-slate-200">
+                  <div className="flex items-center gap-1">
+                    <label className="text-[11px] font-bold text-slate-600">X:</label>
+                    <input
+                      type="number"
+                      step="1"
+                      value={offsetB.x}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        setOffsetB((prev) => ({ ...prev, x: isNaN(val) ? 0 : val }));
+                      }}
+                      className="w-14 px-1 py-0.5 bg-white rounded-md border border-slate-200 font-mono text-xs font-bold text-slate-800 text-center focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 shadow-2xs"
+                      title="Digite o deslocamento horizontal (X) exato em pixels"
+                    />
+                    <span className="text-[10px] text-slate-400 font-mono">px</span>
+                  </div>
+
+                  <span className="text-slate-300">•</span>
+
+                  <div className="flex items-center gap-1">
+                    <label className="text-[11px] font-bold text-slate-600">Y:</label>
+                    <input
+                      type="number"
+                      step="1"
+                      value={offsetB.y}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        setOffsetB((prev) => ({ ...prev, y: isNaN(val) ? 0 : val }));
+                      }}
+                      className="w-14 px-1 py-0.5 bg-white rounded-md border border-slate-200 font-mono text-xs font-bold text-slate-800 text-center focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 shadow-2xs"
+                      title="Digite o deslocamento vertical (Y) exato em pixels"
+                    />
+                    <span className="text-[10px] text-slate-400 font-mono">px</span>
+                  </div>
                 </div>
 
                 {/* Botão de Resetar Calibração */}
@@ -574,7 +696,12 @@ export const PdfDiffViewer: React.FC<PdfDiffViewerProps> = ({
       )}
 
       {/* Área Central de Visualização */}
-      <div className="relative">
+      <div 
+        className={`relative ${isDraggingOffset ? 'cursor-move' : ''}`}
+        onPointerDown={handleOffsetPointerDown}
+        onPointerMove={handleOffsetPointerMove}
+        onPointerUp={handleOffsetPointerUp}
+      >
         {isProcessing && (
           <div className="absolute inset-0 bg-white/80 backdrop-blur-xs flex items-center justify-center z-30 text-slate-700 text-xs font-semibold rounded-2xl border border-slate-100 shadow-sm">
             <div className="w-5 h-5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mr-2" />
@@ -612,12 +739,24 @@ export const PdfDiffViewer: React.FC<PdfDiffViewerProps> = ({
               />
             </div>
 
-            {/* Botão Flutuante do Divisor */}
+            {/* Divisor Cortina Aprimorado */}
             <div
               style={{ left: `${wipePosition}%` }}
-              className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-9 h-9 rounded-full bg-indigo-600 text-white font-bold flex items-center justify-center text-xs shadow-lg pointer-events-none border-2 border-white transition-transform active:scale-110"
+              className="absolute top-0 bottom-0 w-1 bg-indigo-600 shadow-[0_0_15px_rgba(79,70,229,0.5)] pointer-events-none -translate-x-1/2 flex flex-col items-center justify-center z-10"
             >
-              ↔
+              {/* Puxador Maior */}
+              <div className="w-10 h-14 bg-indigo-600 text-white font-bold flex items-center justify-center text-xs shadow-xl rounded-xl border-2 border-white absolute">
+                <span className="opacity-70 mr-0.5">◀</span>
+                <span className="opacity-70 ml-0.5">▶</span>
+              </div>
+              
+              {/* Labels acompanhando o divisor */}
+              <div className="absolute top-1/4 -translate-x-12 bg-white/95 text-indigo-700 px-2 py-1 rounded-lg text-[10px] font-bold shadow-sm backdrop-blur-xs whitespace-nowrap border border-indigo-100">
+                Versão A
+              </div>
+              <div className="absolute top-1/4 translate-x-12 bg-slate-900/95 text-white px-2 py-1 rounded-lg text-[10px] font-bold shadow-sm backdrop-blur-xs whitespace-nowrap border border-slate-700">
+                Versão B
+              </div>
             </div>
 
             {/* Badges Indicadoras FoxBox */}
