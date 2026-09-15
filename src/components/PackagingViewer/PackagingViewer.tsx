@@ -506,8 +506,8 @@ export const PackagingViewer: React.FC<PackagingViewerProps> = ({
           onSelectAnnotation={(ann) => {
             // Centraliza a câmera na anotação (fly-to)
             setPanPosition({
-              x: -(ann.x / 100) * canvasDimensions.width * scale + canvasDimensions.width / 2,
-              y: -(ann.y / 100) * canvasDimensions.height * scale + canvasDimensions.height / 2
+              x: -(ann.x_coord / 100) * canvasDimensions.width * scale + canvasDimensions.width / 2,
+              y: -(ann.y_coord / 100) * canvasDimensions.height * scale + canvasDimensions.height / 2
             });
             setActiveTool('annotate');
           }}
